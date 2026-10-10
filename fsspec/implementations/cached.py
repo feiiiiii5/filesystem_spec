@@ -852,11 +852,11 @@ class WholeFileCacheFileSystem(CachingFileSystem):
             await self._download_async(path, fn, **kwargs)
             self.save_cache()
 
-        with open(fn, "rb") as f:  # noqa ASYNC230
-            if start:
-                f.seek(start)
-            size = -1 if end is None else end - f.tell()
-            return f.read(size)
+        # the same local file and the same range rules as the sync `cat_file`,
+        # as _cat_ranges below also delegates: a negative start or end counts
+        # back from the file length, and a range ending at or before its start
+        # reads nothing rather than the rest of the file
+        return LocalFileSystem().cat_file(fn, start=start, end=end)
 
     def _local_paths_for_ranges(self, paths):
         """Cache file for each of paths, and which remote files to download

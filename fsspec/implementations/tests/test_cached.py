@@ -1737,6 +1737,33 @@ def test_whole_file_cache_cat_file_negative(tmp_path, protocol):
     assert fs.cat_file("/neg/file", end=-1) == b"012345678"
 
 
+@pytest.mark.parametrize("protocol", ["filecache", "simplecache"])
+def test_whole_file_cache_async_cat_file_negative(tmp_path, protocol):
+    # the async face of the whole-file caches slices like the sync one: a
+    # negative start/end counts back from the file length, and a range ending
+    # at or before its start reads nothing instead of the rest of the file
+    fsspec.filesystem("memory").pipe("/neg/file", b"0123456789")
+
+    async def run():
+        fs = _async_caching_fs(protocol, str(tmp_path))
+        assert await fs._cat_file("memory:///neg/file", start=-3) == b"789"
+        assert await fs._cat_file("memory:///neg/file", start=-4, end=-1) == b"678"
+        assert await fs._cat_file("memory:///neg/file", start=2, end=5) == b"234"
+        # start=None with a negative end must still read from the beginning
+        assert (
+            await fs._cat_file("memory:///neg/file", start=None, end=-3) == b"0123456"
+        )
+        assert await fs._cat_file("memory:///neg/file", end=-1) == b"012345678"
+        assert await fs._cat_file("memory:///neg/file", start=2, end=1) == b""
+        assert await fs._cat_file("memory:///neg/file") == b"0123456789"
+        # _cat_ranges, reading the very same cache files, already agrees
+        assert await fs._cat_ranges(
+            ["memory:///neg/file"] * 3, [-3, 2, 2], [None, 1, 5]
+        ) == [b"789", b"", b"234"]
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("protocol", ["simplecache", "filecache"])
 def test_whole_file_cache_read_block(tmp_path, protocol):
     # `read_block` clamps against the file length, which likewise must not
